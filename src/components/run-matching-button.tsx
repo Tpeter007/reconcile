@@ -13,7 +13,8 @@ export function RunMatchingButton() {
       const result = await runMatchingAction();
       if (result.ok) {
         toast.success(
-          `Matched ${result.created} pairs, ${result.skipped} still unmatched`,
+          `Deterministic: ${result.deterministic.created} matched. ` +
+            `LLM: ${result.llm.created} matched, ${result.llm.below_threshold} below threshold.`,
         );
       } else {
         toast.error(result.error);

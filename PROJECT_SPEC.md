@@ -16,6 +16,7 @@ AI-native bank-to-books reconciliation for small businesses that keep their book
 - Bookkeeper or owner-operator doing the reconciliation today
 - Target ACV: $49–$199/month
 
+
 ## Explicitly NOT for (v0)
 - Mid-market on Sage Intacct or NetSuite — different product, different sale
 - Accounting firms with 50+ client books — multi-tenant model, later
@@ -99,18 +100,55 @@ One Next.js app, one Postgres database. Plaid webhooks hit an Inngest function t
 - If you're 3 days behind on any week, cut scope — don't extend the week.
 - Weekly Friday review: did you ship what the milestone said, or not? Be honest.
 - The moment you feel like redesigning the architecture, re-read this file instead.
+## Scaling & Cost Triggers
 
----
+This section captures when to change tools, upgrade tiers, or re-architect. The goal: don't pay for scale we don't have, but have clear signals for when to act.
 
-## Sample data
-The repo ships with `sample-ledger.csv` (April 2026 expenses/income with specific
-amounts and dates) and the Plaid Sandbox dataset (a static set of synthetic
-transactions with fixed descriptions and amounts, dated relative to "today"
-when Plaid returns them). These two sources were not generated together, so
-the deterministic matcher (exact amount ± same money-flow direction, date
-within ±3 days) will generally produce zero matches between them out of the
-box. This is the honest behavior and intentional — a realistic reconciliation
-flow needs a ledger that corresponds to the same underlying bank activity. To
-see the matcher flag pairs during a demo, either (a) upload a ledger CSV whose
-dates/amounts align with the Plaid Sandbox transactions you just pulled, or
-(b) wait until real Plaid data and a real ledger are connected.
+### Infrastructure tiers
+
+**Supabase free tier** — 500MB DB, 50K MAU, 2GB bandwidth. DB cap hits first. 1 SMB with 2 years of transactions ≈ 5–20MB.
+- Upgrade to Supabase Pro ($25/mo) when: 10 paying customers OR DB >300MB.
+
+**Plaid** — Sandbox is free forever. Development is free for 100 Items. Production is ~$0.30–0.60 per connected account per month.
+- Move to Plaid Production on: first paying customer. Not before.
+
+**Vercel** — Not yet deployed. Hobby free up to real usage.
+- Upgrade to Pro ($20/mo) when: first paying customer OR hitting bandwidth limits.
+
+**Database connection mode** — currently Transaction Pooler (port 6543), correct for serverless. If we add long-running migrations from app code or need prepared statements, switch to Session Pooler (5432). Not a concern today.
+
+### LLM cost & latency
+
+**Current per-click cost (ticket 4 measurements):**
+- Empty proposals (no fuzzy matches found): ~3.3K input + ~33 output tokens = ~$0.011
+- Realistic proposals (6 fuzzy matches in 12×30 grid): ~3.6K input + ~1.1K output tokens = ~$0.028
+- **Operating assumption: 2–3 cents per "Run matching" click at current scale.**
+
+**Triggers to re-evaluate LLM path:**
+- Monthly Anthropic bill for app usage > $50 → implement Haiku-first pass for high-confidence cases, escalate to Sonnet only on ambiguous ones
+- p95 latency on Run matching > 30 seconds → implement batching per `llm.ts:161` TODO, send only 50 most-recent unmatched rows per call
+- Any single customer reports 100+ unmatched rows after deterministic → prioritize batching immediately
+
+**Haiku fallback design (deferred):** For pairs with exact-description match (after normalization) + amount within $0.01 + date within 1 day, a Haiku call is probably enough and ~10x cheaper. Don't build until cost data justifies.
+
+### Dev-time cost (Claude Code)
+
+Claude Code runs on Claude Max subscription, which has usage caps.
+
+**Effort settings by ticket type:**
+- **Opus 4.7 xhigh** — novel architecture, multi-file refactors, anything touching matching/LLM logic, debugging subtle issues
+- **Opus 4.7 medium** — standard feature work with clear spec (most tickets)
+- **Sonnet** — UI polish, adding a column, tweaking copy, fixing typos
+
+Check Max usage monthly. If hitting caps often, be more deliberate with effort levels.
+
+### Build & CI
+
+`pnpm build` times out in Claude Code's 5-minute sandbox on a cold compile. Not a real failure — typecheck + lint passing is sufficient signal. Do full builds manually in your own terminal when needed before deploy.
+
+### Stack-level stability rules
+
+- **Don't chase versions.** We're on Next 16, Node 22, Drizzle current. Upgrade only for security patches or specific features we need.
+- **Drizzle → raw SQL before swapping ORMs.** If a query gets hard to express, drop into `db.execute(sql\`...\`)`. Don't move to Prisma.
+- **Supabase Auth is the default forever unless it specifically fails us.** Magic link works. Add Supabase's built-in OAuth providers for SSO when accounting-firm tier requires. Don't move to Clerk/Auth0.
+- **Separate Postgres only post-Supabase-Pro-limits AND post-revenue.** Likely 50–100 paying customers out. Not a near-term concern.

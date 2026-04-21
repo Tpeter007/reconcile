@@ -1,6 +1,7 @@
 import {
   boolean,
   date,
+  integer,
   jsonb,
   numeric,
   pgTable,
@@ -92,8 +93,25 @@ export const matches = pgTable(
   ],
 );
 
+export const llmLogs = pgTable("llm_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull(),
+  purpose: text("purpose").notNull(),
+  model: text("model").notNull(),
+  prompt: jsonb("prompt").notNull(),
+  response: jsonb("response").notNull(),
+  inputTokens: integer("input_tokens"),
+  outputTokens: integer("output_tokens"),
+  durationMs: integer("duration_ms").notNull(),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export type PlaidItem = typeof plaidItems.$inferSelect;
 export type BankAccount = typeof bankAccounts.$inferSelect;
 export type Transaction = typeof transactions.$inferSelect;
 export type LedgerEntry = typeof ledgerEntries.$inferSelect;
 export type Match = typeof matches.$inferSelect;
+export type LlmLog = typeof llmLogs.$inferSelect;

@@ -86,12 +86,20 @@ export default async function DashboardPage() {
     .select({
       bankTransactionId: matches.bankTransactionId,
       ledgerEntryId: matches.ledgerEntryId,
+      method: matches.method,
+      confidence: matches.confidence,
     })
     .from(matches)
     .where(eq(matches.userId, user.id));
 
   const matchedBankIds = new Set(matchRows.map((m) => m.bankTransactionId));
   const matchedLedgerIds = new Set(matchRows.map((m) => m.ledgerEntryId));
+  const matchByBankId = new Map(
+    matchRows.map((m) => [m.bankTransactionId, m]),
+  );
+  const matchByLedgerId = new Map(
+    matchRows.map((m) => [m.ledgerEntryId, m]),
+  );
 
   const bankMatchedCount = bankRows.filter((r) => matchedBankIds.has(r.id))
     .length;
@@ -134,7 +142,7 @@ export default async function DashboardPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-8" />
+                  <TableHead className="w-10" />
                   <TableHead>Date</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Account</TableHead>
@@ -157,17 +165,26 @@ export default async function DashboardPage() {
                 ) : (
                   bankRows.map((r) => {
                     const matched = matchedBankIds.has(r.id);
+                    const match = matchByBankId.get(r.id);
+                    const isLlm = match?.method === "llm_v1";
                     return (
                       <TableRow
                         key={r.id}
                         className={cn(matched && "text-muted-foreground")}
                       >
-                        <TableCell className="w-8">
+                        <TableCell className="w-10">
                           {matched ? (
-                            <Check
-                              className="h-4 w-4 text-emerald-600"
-                              aria-label="Matched"
-                            />
+                            <div className="flex items-center gap-1">
+                              <Check
+                                className="h-4 w-4 text-emerald-600"
+                                aria-label="Matched"
+                              />
+                              {isLlm && match ? (
+                                <span className="text-[10px] text-muted-foreground tabular-nums">
+                                  {Number(match.confidence).toFixed(2)}
+                                </span>
+                              ) : null}
+                            </div>
                           ) : null}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
@@ -204,7 +221,7 @@ export default async function DashboardPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-8" />
+                  <TableHead className="w-10" />
                   <TableHead>Date</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Account</TableHead>
@@ -225,17 +242,26 @@ export default async function DashboardPage() {
                 ) : (
                   ledgerRows.map((r) => {
                     const matched = matchedLedgerIds.has(r.id);
+                    const match = matchByLedgerId.get(r.id);
+                    const isLlm = match?.method === "llm_v1";
                     return (
                       <TableRow
                         key={r.id}
                         className={cn(matched && "text-muted-foreground")}
                       >
-                        <TableCell className="w-8">
+                        <TableCell className="w-10">
                           {matched ? (
-                            <Check
-                              className="h-4 w-4 text-emerald-600"
-                              aria-label="Matched"
-                            />
+                            <div className="flex items-center gap-1">
+                              <Check
+                                className="h-4 w-4 text-emerald-600"
+                                aria-label="Matched"
+                              />
+                              {isLlm && match ? (
+                                <span className="text-[10px] text-muted-foreground tabular-nums">
+                                  {Number(match.confidence).toFixed(2)}
+                                </span>
+                              ) : null}
+                            </div>
                           ) : null}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
