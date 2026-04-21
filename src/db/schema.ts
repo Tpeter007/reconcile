@@ -51,6 +51,22 @@ export const transactions = pgTable("transactions", {
     .defaultNow(),
 });
 
+export const ledgerEntries = pgTable("ledger_entries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull(),
+  date: date("date").notNull(),
+  description: text("description").notNull(),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  account: text("account"),
+  reference: text("reference"),
+  source: text("source").notNull().default("csv_upload"),
+  rawRow: jsonb("raw_row").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export type PlaidItem = typeof plaidItems.$inferSelect;
 export type BankAccount = typeof bankAccounts.$inferSelect;
 export type Transaction = typeof transactions.$inferSelect;
+export type LedgerEntry = typeof ledgerEntries.$inferSelect;

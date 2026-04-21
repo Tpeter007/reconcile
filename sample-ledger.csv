@@ -1,0 +1,16 @@
+Date,Description,Amount,Account,Reference
+2026-04-02,Adobe Creative Cloud,59.99,Software,INV-10234
+2026-04-03,AWS - March usage,412.18,Cloud Infrastructure,AWS-2026-03
+2026-04-05,Uber ride to client meeting,24.50,Travel,
+2026-04-06,Client payment - Acme Corp,-4800.00,Accounts Receivable,INV-2026-017
+2026-04-08,WeWork - April office,650.00,Rent,WW-APR-26
+2026-04-09,Slack annual subscription,102.00,Software,SLK-2026
+2026-04-11,Notion team plan,80.00,Software,NT-2026-04
+2026-04-12,Client payment - Globex LLC,-2200.00,Accounts Receivable,INV-2026-018
+2026-04-13,Uber Eats team lunch,87.34,Meals & Entertainment,
+2026-04-15,Google Workspace,72.00,Software,GW-APR-26
+2026-04-16,Stripe processing fees - March,38.42,Bank Fees,
+2026-04-17,Delta - SFO to JFK (sales trip),612.80,Travel,CONF-ATX-26
+2026-04-18,Figma annual seats,540.00,Software,FIG-2026
+2026-04-19,Office supplies - Staples,132.77,Office Supplies,
+2026-04-20,Comcast business internet,189.00,Utilities,CMC-APR-26
