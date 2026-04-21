@@ -99,3 +99,18 @@ One Next.js app, one Postgres database. Plaid webhooks hit an Inngest function t
 - If you're 3 days behind on any week, cut scope — don't extend the week.
 - Weekly Friday review: did you ship what the milestone said, or not? Be honest.
 - The moment you feel like redesigning the architecture, re-read this file instead.
+
+---
+
+## Sample data
+The repo ships with `sample-ledger.csv` (April 2026 expenses/income with specific
+amounts and dates) and the Plaid Sandbox dataset (a static set of synthetic
+transactions with fixed descriptions and amounts, dated relative to "today"
+when Plaid returns them). These two sources were not generated together, so
+the deterministic matcher (exact amount ± same money-flow direction, date
+within ±3 days) will generally produce zero matches between them out of the
+box. This is the honest behavior and intentional — a realistic reconciliation
+flow needs a ledger that corresponds to the same underlying bank activity. To
+see the matcher flag pairs during a demo, either (a) upload a ledger CSV whose
+dates/amounts align with the Plaid Sandbox transactions you just pulled, or
+(b) wait until real Plaid data and a real ledger are connected.

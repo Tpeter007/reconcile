@@ -1,13 +1,16 @@
 import { redirect } from "next/navigation";
 import { desc, eq, inArray } from "drizzle-orm";
+import { Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { db } from "@/db";
 import {
   bankAccounts,
   ledgerEntries,
+  matches,
   plaidItems,
   transactions,
 } from "@/db/schema";
+import { cn } from "@/lib/utils";
 import {
   Card,
   CardContent,
@@ -24,6 +27,7 @@ import {
 } from "@/components/ui/table";
 import { PlaidLinkButton } from "@/components/plaid-link-button";
 import { LedgerUploadButton } from "@/components/ledger-upload-button";
+import { RunMatchingButton } from "@/components/run-matching-button";
 import { SignOutButton } from "./sign-out-button";
 
 export default async function DashboardPage() {
@@ -78,6 +82,23 @@ export default async function DashboardPage() {
     .orderBy(desc(ledgerEntries.date), desc(ledgerEntries.createdAt))
     .limit(100);
 
+  const matchRows = await db
+    .select({
+      bankTransactionId: matches.bankTransactionId,
+      ledgerEntryId: matches.ledgerEntryId,
+    })
+    .from(matches)
+    .where(eq(matches.userId, user.id));
+
+  const matchedBankIds = new Set(matchRows.map((m) => m.bankTransactionId));
+  const matchedLedgerIds = new Set(matchRows.map((m) => m.ledgerEntryId));
+
+  const bankMatchedCount = bankRows.filter((r) => matchedBankIds.has(r.id))
+    .length;
+  const ledgerMatchedCount = ledgerRows.filter((r) =>
+    matchedLedgerIds.has(r.id),
+  ).length;
+
   const currency = new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
@@ -95,6 +116,7 @@ export default async function DashboardPage() {
         <div className="flex flex-wrap items-center gap-3">
           <LedgerUploadButton />
           <PlaidLinkButton />
+          <RunMatchingButton />
           <SignOutButton />
         </div>
       </header>
@@ -103,11 +125,16 @@ export default async function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Bank transactions</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              {bankRows.length} total, {bankMatchedCount} matched,{" "}
+              {bankRows.length - bankMatchedCount} unmatched
+            </p>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-8" />
                   <TableHead>Date</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Account</TableHead>
@@ -119,7 +146,7 @@ export default async function DashboardPage() {
                 {bankRows.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={5}
+                      colSpan={6}
                       className="text-center text-muted-foreground py-8"
                     >
                       {itemIds.length === 0
@@ -128,21 +155,37 @@ export default async function DashboardPage() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  bankRows.map((r) => (
-                    <TableRow key={r.id}>
-                      <TableCell className="whitespace-nowrap">
-                        {r.date}
-                      </TableCell>
-                      <TableCell>{r.description}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {r.mask ? `•••• ${r.mask}` : r.accountName}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {currency.format(Number(r.amount))}
-                      </TableCell>
-                      <TableCell>{r.pending ? "Pending" : "Posted"}</TableCell>
-                    </TableRow>
-                  ))
+                  bankRows.map((r) => {
+                    const matched = matchedBankIds.has(r.id);
+                    return (
+                      <TableRow
+                        key={r.id}
+                        className={cn(matched && "text-muted-foreground")}
+                      >
+                        <TableCell className="w-8">
+                          {matched ? (
+                            <Check
+                              className="h-4 w-4 text-emerald-600"
+                              aria-label="Matched"
+                            />
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {r.date}
+                        </TableCell>
+                        <TableCell>{r.description}</TableCell>
+                        <TableCell>
+                          {r.mask ? `•••• ${r.mask}` : r.accountName}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {currency.format(Number(r.amount))}
+                        </TableCell>
+                        <TableCell>
+                          {r.pending ? "Pending" : "Posted"}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
@@ -152,11 +195,16 @@ export default async function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Ledger entries</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              {ledgerRows.length} total, {ledgerMatchedCount} matched,{" "}
+              {ledgerRows.length - ledgerMatchedCount} unmatched
+            </p>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-8" />
                   <TableHead>Date</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Account</TableHead>
@@ -168,30 +216,40 @@ export default async function DashboardPage() {
                 {ledgerRows.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={5}
+                      colSpan={6}
                       className="text-center text-muted-foreground py-8"
                     >
                       No ledger entries yet. Upload a CSV to see them here.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  ledgerRows.map((r) => (
-                    <TableRow key={r.id}>
-                      <TableCell className="whitespace-nowrap">
-                        {r.date}
-                      </TableCell>
-                      <TableCell>{r.description}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {r.account ?? ""}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {r.reference ?? ""}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {currency.format(Number(r.amount))}
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  ledgerRows.map((r) => {
+                    const matched = matchedLedgerIds.has(r.id);
+                    return (
+                      <TableRow
+                        key={r.id}
+                        className={cn(matched && "text-muted-foreground")}
+                      >
+                        <TableCell className="w-8">
+                          {matched ? (
+                            <Check
+                              className="h-4 w-4 text-emerald-600"
+                              aria-label="Matched"
+                            />
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {r.date}
+                        </TableCell>
+                        <TableCell>{r.description}</TableCell>
+                        <TableCell>{r.account ?? ""}</TableCell>
+                        <TableCell>{r.reference ?? ""}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {currency.format(Number(r.amount))}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>

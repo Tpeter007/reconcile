@@ -6,6 +6,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -66,7 +67,33 @@ export const ledgerEntries = pgTable("ledger_entries", {
     .defaultNow(),
 });
 
+export const matches = pgTable(
+  "matches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull(),
+    bankTransactionId: uuid("bank_transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    ledgerEntryId: uuid("ledger_entry_id")
+      .notNull()
+      .references(() => ledgerEntries.id, { onDelete: "cascade" }),
+    method: text("method").notNull(),
+    confidence: numeric("confidence", { precision: 4, scale: 3 })
+      .notNull()
+      .default("1.000"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("matches_bank_transaction_id_unique").on(t.bankTransactionId),
+    uniqueIndex("matches_ledger_entry_id_unique").on(t.ledgerEntryId),
+  ],
+);
+
 export type PlaidItem = typeof plaidItems.$inferSelect;
 export type BankAccount = typeof bankAccounts.$inferSelect;
 export type Transaction = typeof transactions.$inferSelect;
 export type LedgerEntry = typeof ledgerEntries.$inferSelect;
+export type Match = typeof matches.$inferSelect;
