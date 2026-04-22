@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { db } from "@/db";
@@ -28,6 +28,12 @@ import {
 import { PlaidLinkButton } from "@/components/plaid-link-button";
 import { LedgerUploadButton } from "@/components/ledger-upload-button";
 import { RunMatchingButton } from "@/components/run-matching-button";
+import {
+  AcceptRejectButtons,
+  ManualLinkButton,
+  UnmatchButton,
+} from "@/components/match-actions";
+import type { UnmatchedLedgerEntry } from "@/components/manual-link-dialog";
 import { SignOutButton } from "./sign-out-button";
 
 export default async function DashboardPage() {
@@ -82,30 +88,40 @@ export default async function DashboardPage() {
     .orderBy(desc(ledgerEntries.date), desc(ledgerEntries.createdAt))
     .limit(100);
 
-  const matchRows = await db
+  const activeMatches = await db
     .select({
+      id: matches.id,
       bankTransactionId: matches.bankTransactionId,
       ledgerEntryId: matches.ledgerEntryId,
       method: matches.method,
       confidence: matches.confidence,
+      state: matches.state,
     })
     .from(matches)
-    .where(eq(matches.userId, user.id));
+    .where(and(eq(matches.userId, user.id), ne(matches.state, "rejected")));
 
-  const matchedBankIds = new Set(matchRows.map((m) => m.bankTransactionId));
-  const matchedLedgerIds = new Set(matchRows.map((m) => m.ledgerEntryId));
   const matchByBankId = new Map(
-    matchRows.map((m) => [m.bankTransactionId, m]),
+    activeMatches.map((m) => [m.bankTransactionId, m]),
   );
   const matchByLedgerId = new Map(
-    matchRows.map((m) => [m.ledgerEntryId, m]),
+    activeMatches.map((m) => [m.ledgerEntryId, m]),
   );
 
-  const bankMatchedCount = bankRows.filter((r) => matchedBankIds.has(r.id))
-    .length;
-  const ledgerMatchedCount = ledgerRows.filter((r) =>
-    matchedLedgerIds.has(r.id),
+  const bankMatchedCount = bankRows.filter((r) =>
+    matchByBankId.has(r.id),
   ).length;
+  const ledgerMatchedCount = ledgerRows.filter((r) =>
+    matchByLedgerId.has(r.id),
+  ).length;
+
+  const unmatchedLedgerEntries: UnmatchedLedgerEntry[] = ledgerRows
+    .filter((r) => !matchByLedgerId.has(r.id))
+    .map((r) => ({
+      id: r.id,
+      date: r.date,
+      description: r.description,
+      amount: r.amount,
+    }));
 
   const currency = new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -148,13 +164,14 @@ export default async function DashboardPage() {
                   <TableHead>Account</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {bankRows.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={7}
                       className="text-center text-muted-foreground py-8"
                     >
                       {itemIds.length === 0
@@ -164,9 +181,10 @@ export default async function DashboardPage() {
                   </TableRow>
                 ) : (
                   bankRows.map((r) => {
-                    const matched = matchedBankIds.has(r.id);
                     const match = matchByBankId.get(r.id);
+                    const matched = match !== undefined;
                     const isLlm = match?.method === "llm_v1";
+                    const isProposed = match?.state === "proposed";
                     return (
                       <TableRow
                         key={r.id}
@@ -179,7 +197,7 @@ export default async function DashboardPage() {
                                 className="h-4 w-4 text-emerald-600"
                                 aria-label="Matched"
                               />
-                              {isLlm && match ? (
+                              {isLlm ? (
                                 <span className="text-[10px] text-muted-foreground tabular-nums">
                                   {Number(match.confidence).toFixed(2)}
                                 </span>
@@ -199,6 +217,23 @@ export default async function DashboardPage() {
                         </TableCell>
                         <TableCell>
                           {r.pending ? "Pending" : "Posted"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {!matched ? (
+                            <ManualLinkButton
+                              bankRow={{
+                                id: r.id,
+                                date: r.date,
+                                description: r.description,
+                                amount: r.amount,
+                              }}
+                              unmatchedLedgerEntries={unmatchedLedgerEntries}
+                            />
+                          ) : isProposed ? (
+                            <AcceptRejectButtons matchId={match.id} />
+                          ) : (
+                            <UnmatchButton matchId={match.id} />
+                          )}
                         </TableCell>
                       </TableRow>
                     );
@@ -227,13 +262,14 @@ export default async function DashboardPage() {
                   <TableHead>Account</TableHead>
                   <TableHead>Reference</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {ledgerRows.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={7}
                       className="text-center text-muted-foreground py-8"
                     >
                       No ledger entries yet. Upload a CSV to see them here.
@@ -241,9 +277,10 @@ export default async function DashboardPage() {
                   </TableRow>
                 ) : (
                   ledgerRows.map((r) => {
-                    const matched = matchedLedgerIds.has(r.id);
                     const match = matchByLedgerId.get(r.id);
+                    const matched = match !== undefined;
                     const isLlm = match?.method === "llm_v1";
+                    const isProposed = match?.state === "proposed";
                     return (
                       <TableRow
                         key={r.id}
@@ -256,7 +293,7 @@ export default async function DashboardPage() {
                                 className="h-4 w-4 text-emerald-600"
                                 aria-label="Matched"
                               />
-                              {isLlm && match ? (
+                              {isLlm ? (
                                 <span className="text-[10px] text-muted-foreground tabular-nums">
                                   {Number(match.confidence).toFixed(2)}
                                 </span>
@@ -272,6 +309,15 @@ export default async function DashboardPage() {
                         <TableCell>{r.reference ?? ""}</TableCell>
                         <TableCell className="text-right tabular-nums">
                           {currency.format(Number(r.amount))}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {matched ? (
+                            isProposed ? (
+                              <AcceptRejectButtons matchId={match.id} />
+                            ) : (
+                              <UnmatchButton matchId={match.id} />
+                            )
+                          ) : null}
                         </TableCell>
                       </TableRow>
                     );

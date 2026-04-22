@@ -9,7 +9,12 @@ type RunMatchingResult =
   | {
       ok: true;
       deterministic: { created: number; skipped: number };
-      llm: { created: number; considered: number; below_threshold: number };
+      llm: {
+        created: number;
+        considered: number;
+        below_threshold: number;
+        excluded_rejected: number;
+      };
     }
   | { ok: false; error: string };
 

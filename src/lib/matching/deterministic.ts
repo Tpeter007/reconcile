@@ -90,6 +90,7 @@ export async function runDeterministicMatching(
     bankTransactionId: string;
     ledgerEntryId: string;
     method: string;
+    state: "confirmed";
   }[] = [];
   let skipped = 0;
 
@@ -123,6 +124,7 @@ export async function runDeterministicMatching(
       bankTransactionId: bank.id,
       ledgerEntryId: pick.id,
       method: METHOD,
+      state: "confirmed",
     });
   }
 

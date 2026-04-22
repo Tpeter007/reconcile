@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   date,
@@ -83,13 +84,19 @@ export const matches = pgTable(
     confidence: numeric("confidence", { precision: 4, scale: 3 })
       .notNull()
       .default("1.000"),
+    state: text("state").notNull().default("proposed"),
+    createdBy: uuid("created_by"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (t) => [
-    uniqueIndex("matches_bank_transaction_id_unique").on(t.bankTransactionId),
-    uniqueIndex("matches_ledger_entry_id_unique").on(t.ledgerEntryId),
+    uniqueIndex("matches_bank_transaction_id_unique")
+      .on(t.bankTransactionId)
+      .where(sql`state != 'rejected'`),
+    uniqueIndex("matches_ledger_entry_id_unique")
+      .on(t.ledgerEntryId)
+      .where(sql`state != 'rejected'`),
   ],
 );
 

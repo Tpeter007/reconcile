@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, ne, notExists, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   bankAccounts,
@@ -124,7 +124,12 @@ function buildUserMessage(
 
 export async function runLlmMatching(
   userId: string,
-): Promise<{ created: number; considered: number; below_threshold: number }> {
+): Promise<{
+  created: number;
+  considered: number;
+  below_threshold: number;
+  excluded_rejected: number;
+}> {
   const bankRowsAll: BankRow[] = await db
     .select({
       id: transactions.id,
@@ -137,8 +142,22 @@ export async function runLlmMatching(
     .from(transactions)
     .innerJoin(bankAccounts, eq(transactions.bankAccountId, bankAccounts.id))
     .innerJoin(plaidItems, eq(bankAccounts.plaidItemId, plaidItems.id))
-    .leftJoin(matches, eq(matches.bankTransactionId, transactions.id))
-    .where(and(eq(plaidItems.userId, userId), isNull(matches.id)));
+    .where(
+      and(
+        eq(plaidItems.userId, userId),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(matches)
+            .where(
+              and(
+                eq(matches.bankTransactionId, transactions.id),
+                ne(matches.state, "rejected"),
+              ),
+            ),
+        ),
+      ),
+    );
 
   const ledgerRowsAll: LedgerRow[] = await db
     .select({
@@ -151,11 +170,41 @@ export async function runLlmMatching(
       createdAt: ledgerEntries.createdAt,
     })
     .from(ledgerEntries)
-    .leftJoin(matches, eq(matches.ledgerEntryId, ledgerEntries.id))
-    .where(and(eq(ledgerEntries.userId, userId), isNull(matches.id)));
+    .where(
+      and(
+        eq(ledgerEntries.userId, userId),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(matches)
+            .where(
+              and(
+                eq(matches.ledgerEntryId, ledgerEntries.id),
+                ne(matches.state, "rejected"),
+              ),
+            ),
+        ),
+      ),
+    );
+
+  const rejectedRows = await db
+    .select({
+      bankTransactionId: matches.bankTransactionId,
+      ledgerEntryId: matches.ledgerEntryId,
+    })
+    .from(matches)
+    .where(and(eq(matches.userId, userId), eq(matches.state, "rejected")));
+  const rejectedKeys = new Set(
+    rejectedRows.map((r) => `${r.bankTransactionId}|${r.ledgerEntryId}`),
+  );
 
   if (bankRowsAll.length === 0 || ledgerRowsAll.length === 0) {
-    return { created: 0, considered: 0, below_threshold: 0 };
+    return {
+      created: 0,
+      considered: 0,
+      below_threshold: 0,
+      excluded_rejected: 0,
+    };
   }
 
   // TODO(ticket-4): batch or summarize when either side exceeds 50 rows
@@ -206,6 +255,7 @@ export async function runLlmMatching(
       created: 0,
       considered: 0,
       below_threshold: 0,
+      excluded_rejected: 0,
     };
   }
 
@@ -247,7 +297,7 @@ export async function runLlmMatching(
   }
 
   if (!response || errorMessage) {
-    return { created: 0, considered: 0, below_threshold: 0 };
+    return { created: 0, considered: 0, below_threshold: 0, excluded_rejected: 0 };
   }
 
   const toolBlock = response.content.find(
@@ -256,7 +306,7 @@ export async function runLlmMatching(
   );
 
   if (!toolBlock) {
-    return { created: 0, considered: 0, below_threshold: 0 };
+    return { created: 0, considered: 0, below_threshold: 0, excluded_rejected: 0 };
   }
 
   const input = toolBlock.input as { pairs?: unknown } | undefined;
@@ -264,8 +314,16 @@ export async function runLlmMatching(
   const proposed: ProposedPair[] = rawPairs.filter(isProposedPair);
 
   // Only consider pairs whose IDs belong to the loaded unmatched sets.
-  const valid = proposed.filter(
+  const validByIds = proposed.filter(
     (p) => bankIds.has(p.bank_transaction_id) && ledgerIds.has(p.ledger_entry_id),
+  );
+
+  // Drop pairs the user has previously rejected so the LLM can't re-propose them.
+  const excludedRejected = validByIds.filter((p) =>
+    rejectedKeys.has(`${p.bank_transaction_id}|${p.ledger_entry_id}`),
+  ).length;
+  const valid = validByIds.filter(
+    (p) => !rejectedKeys.has(`${p.bank_transaction_id}|${p.ledger_entry_id}`),
   );
 
   const considered = valid.length;
@@ -304,6 +362,7 @@ export async function runLlmMatching(
           ledgerEntryId: pair.ledger_entry_id,
           method: METHOD,
           confidence,
+          state: "proposed",
         })
         .onConflictDoNothing()
         .returning({ id: matches.id });
@@ -313,5 +372,10 @@ export async function runLlmMatching(
     }
   }
 
-  return { created, considered, below_threshold: belowThresholdCount };
+  return {
+    created,
+    considered,
+    below_threshold: belowThresholdCount,
+    excluded_rejected: excludedRejected,
+  };
 }
