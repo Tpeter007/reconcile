@@ -95,6 +95,14 @@ One Next.js app, one Postgres database. Plaid webhooks hit an Inngest function t
 - Anomaly → Slack / email digest
 - THIS is where the programmable-ledger vision begins. Own the data layer first, then earn the right to talk about tokenized rails.
 
+## What has shipped
+
+- **April 20, 2026** — v0: signup → Plaid bank connect → transactions table rendering end-to-end.
+- **April 20, 2026** — Ticket 2: CSV ledger upload, side-by-side dashboard.
+- **April 21, 2026** — Ticket 3: deterministic matching (exact amount + money-flow direction + date ±3 days).
+- **April 21, 2026** — Ticket 4: LLM matching layer with Sonnet 4.5 (`claude-sonnet-4-5-20250929`), `llm_logs` table, confidence badges on the dashboard. ~$0.028/click on realistic data.
+- **April 22, 2026** — Ticket 5: review UI (accept/reject/unmatch/manual link) + rejected-pair exclusion in the LLM matcher. Manually verified end-to-end including DB-level inspection of the rejection filter.
+
 ## Guardrails for your future self
 - If a feature isn't on the 30-day milestone list, it doesn't ship in v0.
 - If you're 3 days behind on any week, cut scope — don't extend the week.
