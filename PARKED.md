@@ -15,7 +15,7 @@ Things I've noticed or discussed but deliberately chose not to build yet. Review
 
 ## From pre-v0 (April 20, 2026)
 
-- **Encrypt Plaid access tokens at rest.** TODO in `src/db/schema.ts:12`. Required before moving Plaid from Sandbox to Production. Not blocking in Sandbox because those aren't real credentials.
+- **Encrypt Plaid and QBO tokens at rest.** Must land before either provider goes to Production. Not blocking in Sandbox because those aren't real credentials. TODO in `src/db/schema.ts:12` (Plaid); applies to `qbo_connections` once ticket 6 merges.
 - **Handle modified/removed Plaid transactions in the sync worker.** TODO in `src/app/plaid/actions.ts:106`. Current sync only handles new transactions.
 
 ## Broader parking lot (from PROJECT_SPEC.md non-goals)
