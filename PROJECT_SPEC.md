@@ -102,6 +102,7 @@ One Next.js app, one Postgres database. Plaid webhooks hit an Inngest function t
 - **April 21, 2026** — Ticket 3: deterministic matching (exact amount + money-flow direction + date ±3 days).
 - **April 21, 2026** — Ticket 4: LLM matching layer with Sonnet 4.5 (`claude-sonnet-4-5-20250929`), `llm_logs` table, confidence badges on the dashboard. ~$0.028/click on realistic data.
 - **April 22, 2026** — Ticket 5: review UI (accept/reject/unmatch/manual link) + rejected-pair exclusion in the LLM matcher. Manually verified end-to-end including DB-level inspection of the rejection filter.
+- **April 23, 2026** — Ticket 7: QBO as first-class matching target (Scope C). Both deterministic and LLM matchers now consider `ledger_entries` and `qbo_entries` as a unified counterparty pool. Manual link dialog shows unified list with CSV/QBO badges. Dashboard QBO column renders matched state symmetric to ledger. Schema: nullable FK + CHECK constraint guarantees exactly one counterparty per match. Sandbox verified end-to-end.
 
 ## Guardrails for your future self
 - If a feature isn't on the 30-day milestone list, it doesn't ship in v0.

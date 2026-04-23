@@ -40,3 +40,9 @@ These are explicitly not v0 scope. Review after design partners 2-3 have used th
 - **Parallelize QBO sync queries.** `src/lib/qbo/sync.ts` runs six entity-type queries in series. Measured 8-10s for 34 rows at sandbox scale. Wrap in `Promise.all` when a real customer reports slow syncs or when we observe >20s p95.
 - **`looksBankLike` heuristic misses card-brand account names.** In `src/lib/qbo/sync.ts`, the heuristic that identifies the "bank/cash" line in a JournalEntry (for sign derivation) matches substrings like "checking", "savings", "credit card". It does NOT match accounts named "Mastercard", "Amex", "Chase Sapphire", etc. Fix: scan account type from the chart of accounts rather than name. Can't test until we see a real customer with JournalEntries against branded card accounts.
 - **`intuit-oauth` SDK could be replaced with plain fetch.** The SDK wraps three endpoints we could hit directly in ~80 lines. Not urgent; only revisit if the SDK is abandoned, breaks on a Next.js upgrade, or causes hydration/bundle-size issues.
+## From ticket 7 (April 23, 2026)
+
+- **Run matching toast: per-source breakdown.** Deterministic/LLM toast still reads "Deterministic: N matched. LLM: M matched, K below threshold." Doesn't distinguish CSV-sourced from QBO-sourced matches. Parked deliberately — debugging aid, not customer-facing.
+- **Source filter in manual-link dialog.** Description-only filter for now; could add CSV/QBO toggle if a user complains.
+- **Unify ledger sources (de-dup CSV vs QBO).** A customer mid-migration may have the same underlying entry in both pools; matcher picks one, other stays unmatched. Revisit if a design partner hits this.
+- **Batch LLM when counterparty count exceeds 50.** TODO at `src/lib/matching/llm.ts:276` — currently truncates to 50 most recent across both sources. Batch or summarize when a real user breaks the cap.
