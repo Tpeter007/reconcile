@@ -9,6 +9,7 @@ import {
   ledgerEntries,
   matches,
   plaidItems,
+  qboEntries,
   transactions,
 } from "@/db/schema";
 
@@ -114,7 +115,8 @@ export async function unmatchConfirmed(matchId: string): Promise<ActionResult> {
 
 export async function createManualMatch(
   bankTransactionId: string,
-  ledgerEntryId: string,
+  counterpartyId: string,
+  counterpartySource: "ledger" | "qbo",
 ): Promise<ActionResult> {
   const userId = await getUserId();
   if (!userId) return { ok: false, error: "Not authenticated." };
@@ -135,15 +137,31 @@ export async function createManualMatch(
     return { ok: false, error: "Bank transaction not found." };
   }
 
-  const ledgerOwner = await db
-    .select({ id: ledgerEntries.id })
-    .from(ledgerEntries)
-    .where(
-      and(eq(ledgerEntries.id, ledgerEntryId), eq(ledgerEntries.userId, userId)),
-    )
-    .limit(1);
-  if (ledgerOwner.length === 0) {
-    return { ok: false, error: "Ledger entry not found." };
+  if (counterpartySource === "ledger") {
+    const ledgerOwner = await db
+      .select({ id: ledgerEntries.id })
+      .from(ledgerEntries)
+      .where(
+        and(
+          eq(ledgerEntries.id, counterpartyId),
+          eq(ledgerEntries.userId, userId),
+        ),
+      )
+      .limit(1);
+    if (ledgerOwner.length === 0) {
+      return { ok: false, error: "Ledger entry not found." };
+    }
+  } else {
+    const qboOwner = await db
+      .select({ id: qboEntries.id })
+      .from(qboEntries)
+      .where(
+        and(eq(qboEntries.id, counterpartyId), eq(qboEntries.userId, userId)),
+      )
+      .limit(1);
+    if (qboOwner.length === 0) {
+      return { ok: false, error: "QBO entry not found." };
+    }
   }
 
   const existingBank = await db
@@ -163,20 +181,22 @@ export async function createManualMatch(
     };
   }
 
-  const existingLedger = await db
+  const counterpartyFkCol =
+    counterpartySource === "ledger" ? matches.ledgerEntryId : matches.qboEntryId;
+  const existingCounterparty = await db
     .select({ id: matches.id })
     .from(matches)
     .where(
-      and(
-        eq(matches.ledgerEntryId, ledgerEntryId),
-        ne(matches.state, "rejected"),
-      ),
+      and(eq(counterpartyFkCol, counterpartyId), ne(matches.state, "rejected")),
     )
     .limit(1);
-  if (existingLedger.length > 0) {
+  if (existingCounterparty.length > 0) {
     return {
       ok: false,
-      error: "This ledger entry is already matched.",
+      error:
+        counterpartySource === "ledger"
+          ? "This ledger entry is already matched."
+          : "This QBO entry is already matched.",
     };
   }
 
@@ -184,7 +204,8 @@ export async function createManualMatch(
     await db.insert(matches).values({
       userId,
       bankTransactionId,
-      ledgerEntryId,
+      ledgerEntryId: counterpartySource === "ledger" ? counterpartyId : null,
+      qboEntryId: counterpartySource === "qbo" ? counterpartyId : null,
       method: "manual_v1",
       confidence: "1.000",
       state: "confirmed",

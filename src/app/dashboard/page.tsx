@@ -42,7 +42,7 @@ import {
   ManualLinkButton,
   UnmatchButton,
 } from "@/components/match-actions";
-import type { UnmatchedLedgerEntry } from "@/components/manual-link-dialog";
+import type { UnmatchedCounterparty } from "@/components/manual-link-dialog";
 import { SignOutButton } from "./sign-out-button";
 
 export default async function DashboardPage() {
@@ -138,6 +138,7 @@ export default async function DashboardPage() {
       id: matches.id,
       bankTransactionId: matches.bankTransactionId,
       ledgerEntryId: matches.ledgerEntryId,
+      qboEntryId: matches.qboEntryId,
       method: matches.method,
       confidence: matches.confidence,
       state: matches.state,
@@ -149,7 +150,14 @@ export default async function DashboardPage() {
     activeMatches.map((m) => [m.bankTransactionId, m]),
   );
   const matchByLedgerId = new Map(
-    activeMatches.map((m) => [m.ledgerEntryId, m]),
+    activeMatches
+      .filter((m) => m.ledgerEntryId !== null)
+      .map((m) => [m.ledgerEntryId as string, m]),
+  );
+  const matchByQboId = new Map(
+    activeMatches
+      .filter((m) => m.qboEntryId !== null)
+      .map((m) => [m.qboEntryId as string, m]),
   );
 
   const bankMatchedCount = bankRows.filter((r) =>
@@ -158,15 +166,28 @@ export default async function DashboardPage() {
   const ledgerMatchedCount = ledgerRows.filter((r) =>
     matchByLedgerId.has(r.id),
   ).length;
+  const qboMatchedCount = qboRows.filter((r) => matchByQboId.has(r.id)).length;
 
-  const unmatchedLedgerEntries: UnmatchedLedgerEntry[] = ledgerRows
-    .filter((r) => !matchByLedgerId.has(r.id))
-    .map((r) => ({
-      id: r.id,
-      date: r.date,
-      description: r.description,
-      amount: r.amount,
-    }));
+  const unmatchedCounterparties: UnmatchedCounterparty[] = [
+    ...ledgerRows
+      .filter((r) => !matchByLedgerId.has(r.id))
+      .map<UnmatchedCounterparty>((r) => ({
+        id: r.id,
+        source: "ledger",
+        date: r.date,
+        description: r.description,
+        amount: r.amount,
+      })),
+    ...qboRows
+      .filter((r) => !matchByQboId.has(r.id))
+      .map<UnmatchedCounterparty>((r) => ({
+        id: r.id,
+        source: "qbo",
+        date: r.date,
+        description: r.description,
+        amount: r.amount,
+      })),
+  ].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
   const currency = new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -279,7 +300,7 @@ export default async function DashboardPage() {
                                 description: r.description,
                                 amount: r.amount,
                               }}
-                              unmatchedLedgerEntries={unmatchedLedgerEntries}
+                              unmatchedCounterparties={unmatchedCounterparties}
                             />
                           ) : isProposed ? (
                             <AcceptRejectButtons matchId={match.id} />
@@ -384,7 +405,8 @@ export default async function DashboardPage() {
           <CardHeader>
             <CardTitle>QBO entries</CardTitle>
             <p className="text-sm text-muted-foreground">
-              {qboRows.length} total
+              {qboRows.length} total, {qboMatchedCount} matched,{" "}
+              {qboRows.length - qboMatchedCount} unmatched
             </p>
             <p className="text-xs text-muted-foreground">
               {Object.keys(qboCountsByType).length === 0
@@ -408,13 +430,14 @@ export default async function DashboardPage() {
                   <TableHead>Reference</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead>Type</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {qboRows.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={8}
                       className="text-center text-muted-foreground py-8"
                     >
                       {qboState === "disconnected"
@@ -426,10 +449,10 @@ export default async function DashboardPage() {
                   </TableRow>
                 ) : (
                   qboRows.map((r) => {
-                    // QBO entries can never be in `matches` in v0 (Scope C will
-                    // wire that up). Keep the matched-style branch present so
-                    // the next ticket doesn't have to rewrite this block.
-                    const matched = false;
+                    const match = matchByQboId.get(r.id);
+                    const matched = match !== undefined;
+                    const isLlm = match?.method === "llm_v1";
+                    const isProposed = match?.state === "proposed";
                     return (
                       <TableRow
                         key={r.id}
@@ -437,10 +460,17 @@ export default async function DashboardPage() {
                       >
                         <TableCell className="w-10">
                           {matched ? (
-                            <Check
-                              className="h-4 w-4 text-emerald-600"
-                              aria-label="Matched"
-                            />
+                            <div className="flex items-center gap-1">
+                              <Check
+                                className="h-4 w-4 text-emerald-600"
+                                aria-label="Matched"
+                              />
+                              {isLlm ? (
+                                <span className="text-[10px] text-muted-foreground tabular-nums">
+                                  {Number(match.confidence).toFixed(2)}
+                                </span>
+                              ) : null}
+                            </div>
                           ) : null}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
@@ -454,6 +484,15 @@ export default async function DashboardPage() {
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {r.qboEntityType}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {matched ? (
+                            isProposed ? (
+                              <AcceptRejectButtons matchId={match.id} />
+                            ) : (
+                              <UnmatchButton matchId={match.id} />
+                            )
+                          ) : null}
                         </TableCell>
                       </TableRow>
                     );

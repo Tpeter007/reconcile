@@ -11,7 +11,7 @@ import {
 import {
   ManualLinkDialog,
   type BankRowInfo,
-  type UnmatchedLedgerEntry,
+  type UnmatchedCounterparty,
 } from "@/components/manual-link-dialog";
 
 export function AcceptRejectButtons({ matchId }: { matchId: string }) {
@@ -65,10 +65,10 @@ export function UnmatchButton({ matchId }: { matchId: string }) {
 
 export function ManualLinkButton({
   bankRow,
-  unmatchedLedgerEntries,
+  unmatchedCounterparties,
 }: {
   bankRow: BankRowInfo;
-  unmatchedLedgerEntries: UnmatchedLedgerEntry[];
+  unmatchedCounterparties: UnmatchedCounterparty[];
 }) {
   const [open, setOpen] = useState(false);
 
@@ -81,7 +81,7 @@ export function ManualLinkButton({
         open={open}
         onOpenChange={setOpen}
         bankRow={bankRow}
-        unmatchedLedgerEntries={unmatchedLedgerEntries}
+        unmatchedCounterparties={unmatchedCounterparties}
       />
     </>
   );

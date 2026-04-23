@@ -20,8 +20,9 @@ export type BankRowInfo = {
   amount: string;
 };
 
-export type UnmatchedLedgerEntry = {
+export type UnmatchedCounterparty = {
   id: string;
+  source: "ledger" | "qbo";
   date: string;
   description: string;
   amount: string;
@@ -36,29 +37,30 @@ export function ManualLinkDialog({
   open,
   onOpenChange,
   bankRow,
-  unmatchedLedgerEntries,
+  unmatchedCounterparties,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   bankRow: BankRowInfo;
-  unmatchedLedgerEntries: UnmatchedLedgerEntry[];
+  unmatchedCounterparties: UnmatchedCounterparty[];
 }) {
   const [filter, setFilter] = useState("");
-  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
   const q = filter.trim().toLowerCase();
   const filtered = q
-    ? unmatchedLedgerEntries.filter((e) =>
+    ? unmatchedCounterparties.filter((e) =>
         e.description.toLowerCase().includes(q),
       )
-    : unmatchedLedgerEntries;
+    : unmatchedCounterparties;
 
-  function onLink(ledgerId: string) {
-    setPendingId(ledgerId);
+  function onLink(entry: UnmatchedCounterparty) {
+    const key = `${entry.source}|${entry.id}`;
+    setPendingKey(key);
     startTransition(async () => {
-      const result = await createManualMatch(bankRow.id, ledgerId);
-      setPendingId(null);
+      const result = await createManualMatch(bankRow.id, entry.id, entry.source);
+      setPendingKey(null);
       if (result.ok) {
         toast.success("Linked");
         onOpenChange(false);
@@ -73,7 +75,7 @@ export function ManualLinkDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Link bank transaction to ledger entry</DialogTitle>
+          <DialogTitle>Link bank transaction to a counterparty</DialogTitle>
           <DialogDescription>
             {bankRow.date} · {bankRow.description} ·{" "}
             <span className="tabular-nums">
@@ -91,33 +93,39 @@ export function ManualLinkDialog({
         <div className="max-h-80 overflow-y-auto rounded-md border">
           {filtered.length === 0 ? (
             <div className="p-4 text-center text-sm text-muted-foreground">
-              {unmatchedLedgerEntries.length === 0
-                ? "No unmatched ledger entries."
-                : "No ledger entries match that filter."}
+              {unmatchedCounterparties.length === 0
+                ? "No unmatched counterparty entries."
+                : "No counterparty entries match that filter."}
             </div>
           ) : (
             <ul className="divide-y">
-              {filtered.map((entry) => (
-                <li
-                  key={entry.id}
-                  className="flex items-center gap-2 p-2 text-sm"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="truncate">{entry.description}</div>
-                    <div className="text-xs text-muted-foreground tabular-nums">
-                      {entry.date} · {currency.format(Number(entry.amount))}
-                    </div>
-                  </div>
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={pendingId !== null}
-                    onClick={() => onLink(entry.id)}
+              {filtered.map((entry) => {
+                const key = `${entry.source}|${entry.id}`;
+                return (
+                  <li
+                    key={key}
+                    className="flex items-center gap-2 p-2 text-sm"
                   >
-                    Link
-                  </Button>
-                </li>
-              ))}
+                    <span className="shrink-0 text-xs rounded bg-muted px-1.5 py-0.5 font-medium">
+                      {entry.source === "qbo" ? "QBO" : "CSV"}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate">{entry.description}</div>
+                      <div className="text-xs text-muted-foreground tabular-nums">
+                        {entry.date} · {currency.format(Number(entry.amount))}
+                      </div>
+                    </div>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      disabled={pendingKey !== null}
+                      onClick={() => onLink(entry)}
+                    >
+                      Link
+                    </Button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

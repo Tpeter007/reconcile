@@ -43,6 +43,13 @@
       "when": 1776924216190,
       "tag": "0005_absurd_lord_tyger",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1776971910294,
+      "tag": "0006_living_skrulls",
+      "breakpoints": true
     }
   ]
 }

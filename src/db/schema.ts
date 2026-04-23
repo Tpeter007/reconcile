@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   date,
   integer,
   jsonb,
@@ -77,9 +78,12 @@ export const matches = pgTable(
     bankTransactionId: uuid("bank_transaction_id")
       .notNull()
       .references(() => transactions.id, { onDelete: "cascade" }),
-    ledgerEntryId: uuid("ledger_entry_id")
-      .notNull()
-      .references(() => ledgerEntries.id, { onDelete: "cascade" }),
+    ledgerEntryId: uuid("ledger_entry_id").references(() => ledgerEntries.id, {
+      onDelete: "cascade",
+    }),
+    qboEntryId: uuid("qbo_entry_id").references(() => qboEntries.id, {
+      onDelete: "cascade",
+    }),
     method: text("method").notNull(),
     confidence: numeric("confidence", { precision: 4, scale: 3 })
       .notNull()
@@ -96,7 +100,14 @@ export const matches = pgTable(
       .where(sql`state != 'rejected'`),
     uniqueIndex("matches_ledger_entry_id_unique")
       .on(t.ledgerEntryId)
-      .where(sql`state != 'rejected'`),
+      .where(sql`state != 'rejected' AND ledger_entry_id IS NOT NULL`),
+    uniqueIndex("matches_qbo_entry_id_unique")
+      .on(t.qboEntryId)
+      .where(sql`state != 'rejected' AND qbo_entry_id IS NOT NULL`),
+    check(
+      "matches_exactly_one_counterparty",
+      sql`(ledger_entry_id IS NOT NULL)::int + (qbo_entry_id IS NOT NULL)::int = 1`,
+    ),
   ],
 );
 

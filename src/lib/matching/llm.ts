@@ -7,6 +7,7 @@ import {
   llmLogs,
   matches,
   plaidItems,
+  qboEntries,
   transactions,
 } from "@/db/schema";
 
@@ -14,8 +15,11 @@ const METHOD = "llm_v1";
 const MODEL = "claude-sonnet-4-5-20250929";
 const PURPOSE = "matching_v1";
 const CONFIDENCE_THRESHOLD = 0.7;
-const MAX_ROWS_PER_SIDE = 50;
+const MAX_COUNTERPARTIES = 50;
+const MAX_BANK_ROWS = 50;
 const MAX_OUTPUT_TOKENS = 2048;
+
+type CounterpartySource = "ledger" | "qbo";
 
 type BankRow = {
   id: string;
@@ -26,8 +30,9 @@ type BankRow = {
   createdAt: Date;
 };
 
-type LedgerRow = {
+type CounterpartyRow = {
   id: string;
+  source: CounterpartySource;
   date: string;
   description: string;
   amount: string;
@@ -38,16 +43,17 @@ type LedgerRow = {
 
 type ProposedPair = {
   bank_transaction_id: string;
-  ledger_entry_id: string;
+  counterparty_id: string;
+  counterparty_source: CounterpartySource;
   confidence: number;
   rationale: string;
 };
 
 const SYSTEM_PROMPT =
-  "You are a bookkeeping assistant matching bank transactions against ledger entries. A match means both rows refer to the same underlying financial event. Return only high-confidence matches. Prefer recall lower than precision.";
+  "You are a bookkeeping assistant matching bank transactions against ledger or QBO counterparty entries. A match means both rows refer to the same underlying financial event. Counterparty entries come from two sources — a CSV ledger import and QuickBooks Online — and each candidate is tagged with its source. Return only high-confidence matches. Prefer recall lower than precision.";
 
 const CLOSING_INSTRUCTION =
-  "Using the `propose_matches` tool, return pairs where both rows refer to the same real-world transaction. Confidence 0-1. Amount magnitudes must match. Money-flow direction (debit vs credit) must match. Date gap should generally be ≤7 days. Do not force matches when uncertain — omit the pair.";
+  "Using the `propose_matches` tool, return pairs where a bank transaction and a counterparty entry (ledger or QBO) refer to the same real-world transaction. Confidence 0-1. Amount magnitudes must match. Money-flow direction (debit vs credit) must match. Date gap should generally be ≤7 days. Always return the counterparty's `source` alongside its `id`. Do not force matches when uncertain — omit the pair.";
 
 const TOOL_INPUT_SCHEMA = {
   type: "object" as const,
@@ -58,13 +64,15 @@ const TOOL_INPUT_SCHEMA = {
         type: "object",
         properties: {
           bank_transaction_id: { type: "string" },
-          ledger_entry_id: { type: "string" },
+          counterparty_id: { type: "string" },
+          counterparty_source: { type: "string", enum: ["ledger", "qbo"] },
           confidence: { type: "number", minimum: 0, maximum: 1 },
           rationale: { type: "string" },
         },
         required: [
           "bank_transaction_id",
-          "ledger_entry_id",
+          "counterparty_id",
+          "counterparty_source",
           "confidence",
           "rationale",
         ],
@@ -79,7 +87,8 @@ function isProposedPair(value: unknown): value is ProposedPair {
   const v = value as Record<string, unknown>;
   return (
     typeof v.bank_transaction_id === "string" &&
-    typeof v.ledger_entry_id === "string" &&
+    typeof v.counterparty_id === "string" &&
+    (v.counterparty_source === "ledger" || v.counterparty_source === "qbo") &&
     typeof v.confidence === "number" &&
     typeof v.rationale === "string"
   );
@@ -87,7 +96,7 @@ function isProposedPair(value: unknown): value is ProposedPair {
 
 function buildUserMessage(
   bankRows: BankRow[],
-  ledgerRows: LedgerRow[],
+  counterpartyRows: CounterpartyRow[],
 ): string {
   const bankPayload = bankRows.map((r) => ({
     id: r.id,
@@ -96,8 +105,9 @@ function buildUserMessage(
     amount: Number(r.amount),
     account_mask: r.mask,
   }));
-  const ledgerPayload = ledgerRows.map((r) => ({
+  const counterpartyPayload = counterpartyRows.map((r) => ({
     id: r.id,
+    source: r.source,
     date: r.date,
     description: r.description,
     amount: Number(r.amount),
@@ -106,16 +116,16 @@ function buildUserMessage(
   }));
 
   return [
-    "Match these bank transactions against the ledger entries. Both lists are JSON arrays.",
+    "Match these bank transactions against the counterparty entries. Both lists are JSON arrays. Each counterparty entry carries a `source` of `ledger` (CSV import) or `qbo` (QuickBooks Online).",
     "",
     "bank_transactions:",
     "```json",
     JSON.stringify(bankPayload, null, 2),
     "```",
     "",
-    "ledger_entries:",
+    "counterparties:",
     "```json",
-    JSON.stringify(ledgerPayload, null, 2),
+    JSON.stringify(counterpartyPayload, null, 2),
     "```",
     "",
     CLOSING_INSTRUCTION,
@@ -159,7 +169,7 @@ export async function runLlmMatching(
       ),
     );
 
-  const ledgerRowsAll: LedgerRow[] = await db
+  const ledgerRowsAll = await db
     .select({
       id: ledgerEntries.id,
       date: ledgerEntries.date,
@@ -187,18 +197,75 @@ export async function runLlmMatching(
       ),
     );
 
+  const qboRowsAll = await db
+    .select({
+      id: qboEntries.id,
+      date: qboEntries.date,
+      description: qboEntries.description,
+      amount: qboEntries.amount,
+      account: qboEntries.account,
+      reference: qboEntries.reference,
+      createdAt: qboEntries.createdAt,
+    })
+    .from(qboEntries)
+    .where(
+      and(
+        eq(qboEntries.userId, userId),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(matches)
+            .where(
+              and(
+                eq(matches.qboEntryId, qboEntries.id),
+                ne(matches.state, "rejected"),
+              ),
+            ),
+        ),
+      ),
+    );
+
+  const counterpartyRowsAll: CounterpartyRow[] = [
+    ...ledgerRowsAll.map<CounterpartyRow>((r) => ({
+      id: r.id,
+      source: "ledger",
+      date: r.date,
+      description: r.description,
+      amount: r.amount,
+      account: r.account,
+      reference: r.reference,
+      createdAt: r.createdAt,
+    })),
+    ...qboRowsAll.map<CounterpartyRow>((r) => ({
+      id: r.id,
+      source: "qbo",
+      date: r.date,
+      description: r.description,
+      amount: r.amount,
+      account: r.account,
+      reference: r.reference,
+      createdAt: r.createdAt,
+    })),
+  ];
+
   const rejectedRows = await db
     .select({
       bankTransactionId: matches.bankTransactionId,
       ledgerEntryId: matches.ledgerEntryId,
+      qboEntryId: matches.qboEntryId,
     })
     .from(matches)
     .where(and(eq(matches.userId, userId), eq(matches.state, "rejected")));
-  const rejectedKeys = new Set(
-    rejectedRows.map((r) => `${r.bankTransactionId}|${r.ledgerEntryId}`),
-  );
+  const rejectedKeys = new Set<string>();
+  for (const r of rejectedRows) {
+    if (r.ledgerEntryId) {
+      rejectedKeys.add(`${r.bankTransactionId}|ledger|${r.ledgerEntryId}`);
+    } else if (r.qboEntryId) {
+      rejectedKeys.add(`${r.bankTransactionId}|qbo|${r.qboEntryId}`);
+    }
+  }
 
-  if (bankRowsAll.length === 0 || ledgerRowsAll.length === 0) {
+  if (bankRowsAll.length === 0 || counterpartyRowsAll.length === 0) {
     return {
       created: 0,
       considered: 0,
@@ -207,21 +274,28 @@ export async function runLlmMatching(
     };
   }
 
-  // TODO(ticket-4): batch or summarize when either side exceeds 50 rows
-  // instead of truncating to the most recent.
+  // TODO(ticket-7): batch or summarize when counterparty count exceeds
+  // MAX_COUNTERPARTIES. Today we truncate to the 50 most recent across
+  // both sources combined (regardless of ledger vs QBO split), which is
+  // a prompt-size control, not a balance guarantee.
   const sortByDateDesc = (a: { date: string }, b: { date: string }) =>
     a.date < b.date ? 1 : a.date > b.date ? -1 : 0;
   const bankRows = [...bankRowsAll]
     .sort(sortByDateDesc)
-    .slice(0, MAX_ROWS_PER_SIDE);
-  const ledgerRows = [...ledgerRowsAll]
+    .slice(0, MAX_BANK_ROWS);
+  const counterpartyRows = [...counterpartyRowsAll]
     .sort(sortByDateDesc)
-    .slice(0, MAX_ROWS_PER_SIDE);
+    .slice(0, MAX_COUNTERPARTIES);
 
   const bankIds = new Set(bankRows.map((r) => r.id));
-  const ledgerIds = new Set(ledgerRows.map((r) => r.id));
+  const ledgerIds = new Set(
+    counterpartyRows.filter((r) => r.source === "ledger").map((r) => r.id),
+  );
+  const qboIds = new Set(
+    counterpartyRows.filter((r) => r.source === "qbo").map((r) => r.id),
+  );
 
-  const userMessage = buildUserMessage(bankRows, ledgerRows);
+  const userMessage = buildUserMessage(bankRows, counterpartyRows);
 
   const messages = [
     {
@@ -234,7 +308,7 @@ export async function runLlmMatching(
     {
       name: "propose_matches",
       description:
-        "Return the list of bank-transaction / ledger-entry pairs you believe refer to the same real-world transaction.",
+        "Return the list of bank-transaction / counterparty-entry pairs you believe refer to the same real-world transaction. The counterparty entry can come from the CSV ledger (`source: 'ledger'`) or QuickBooks Online (`source: 'qbo'`).",
       input_schema: TOOL_INPUT_SCHEMA,
     },
   ];
@@ -297,7 +371,12 @@ export async function runLlmMatching(
   }
 
   if (!response || errorMessage) {
-    return { created: 0, considered: 0, below_threshold: 0, excluded_rejected: 0 };
+    return {
+      created: 0,
+      considered: 0,
+      below_threshold: 0,
+      excluded_rejected: 0,
+    };
   }
 
   const toolBlock = response.content.find(
@@ -306,24 +385,38 @@ export async function runLlmMatching(
   );
 
   if (!toolBlock) {
-    return { created: 0, considered: 0, below_threshold: 0, excluded_rejected: 0 };
+    return {
+      created: 0,
+      considered: 0,
+      below_threshold: 0,
+      excluded_rejected: 0,
+    };
   }
 
   const input = toolBlock.input as { pairs?: unknown } | undefined;
   const rawPairs = Array.isArray(input?.pairs) ? input.pairs : [];
   const proposed: ProposedPair[] = rawPairs.filter(isProposedPair);
 
-  // Only consider pairs whose IDs belong to the loaded unmatched sets.
-  const validByIds = proposed.filter(
-    (p) => bankIds.has(p.bank_transaction_id) && ledgerIds.has(p.ledger_entry_id),
-  );
+  // Phase 1: validate IDs belong to the loaded unmatched sets.
+  const validByIds = proposed.filter((p) => {
+    if (!bankIds.has(p.bank_transaction_id)) return false;
+    if (p.counterparty_source === "ledger") {
+      return ledgerIds.has(p.counterparty_id);
+    }
+    return qboIds.has(p.counterparty_id);
+  });
 
-  // Drop pairs the user has previously rejected so the LLM can't re-propose them.
+  // Phase 2: drop pairs the user has previously rejected (keyed by source+id).
   const excludedRejected = validByIds.filter((p) =>
-    rejectedKeys.has(`${p.bank_transaction_id}|${p.ledger_entry_id}`),
+    rejectedKeys.has(
+      `${p.bank_transaction_id}|${p.counterparty_source}|${p.counterparty_id}`,
+    ),
   ).length;
   const valid = validByIds.filter(
-    (p) => !rejectedKeys.has(`${p.bank_transaction_id}|${p.ledger_entry_id}`),
+    (p) =>
+      !rejectedKeys.has(
+        `${p.bank_transaction_id}|${p.counterparty_source}|${p.counterparty_id}`,
+      ),
   );
 
   const considered = valid.length;
@@ -337,16 +430,18 @@ export async function runLlmMatching(
     .sort((a, b) => b.confidence - a.confidence);
 
   const claimedBank = new Set<string>();
-  const claimedLedger = new Set<string>();
+  const claimedCounterparty = new Set<string>();
   const toInsert: ProposedPair[] = [];
   for (const pair of eligible) {
     if (claimedBank.has(pair.bank_transaction_id)) continue;
-    if (claimedLedger.has(pair.ledger_entry_id)) continue;
+    const cpKey = `${pair.counterparty_source}|${pair.counterparty_id}`;
+    if (claimedCounterparty.has(cpKey)) continue;
     claimedBank.add(pair.bank_transaction_id);
-    claimedLedger.add(pair.ledger_entry_id);
+    claimedCounterparty.add(cpKey);
     toInsert.push(pair);
   }
 
+  // Phase 3: insert surviving proposals with the right FK set.
   let created = 0;
   for (const pair of toInsert) {
     try {
@@ -359,7 +454,10 @@ export async function runLlmMatching(
         .values({
           userId,
           bankTransactionId: pair.bank_transaction_id,
-          ledgerEntryId: pair.ledger_entry_id,
+          ledgerEntryId:
+            pair.counterparty_source === "ledger" ? pair.counterparty_id : null,
+          qboEntryId:
+            pair.counterparty_source === "qbo" ? pair.counterparty_id : null,
           method: METHOD,
           confidence,
           state: "proposed",
