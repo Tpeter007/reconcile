@@ -100,6 +100,63 @@ export const matches = pgTable(
   ],
 );
 
+// TODO: encrypt access_token + refresh_token at rest before leaving Sandbox.
+// Will be handled together with plaid_items.access_token in a combined encryption ticket.
+export const qboConnections = pgTable(
+  "qbo_connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull(),
+    realmId: text("realm_id").notNull(),
+    accessToken: text("access_token").notNull(),
+    refreshToken: text("refresh_token").notNull(),
+    accessTokenExpiresAt: timestamp("access_token_expires_at", {
+      withTimezone: true,
+    }).notNull(),
+    refreshTokenExpiresAt: timestamp("refresh_token_expires_at", {
+      withTimezone: true,
+    }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [uniqueIndex("qbo_connections_user_id_unique").on(t.userId)],
+);
+
+export const qboEntries = pgTable(
+  "qbo_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull(),
+    qboConnectionId: uuid("qbo_connection_id")
+      .notNull()
+      .references(() => qboConnections.id, { onDelete: "cascade" }),
+    qboEntityType: text("qbo_entity_type").notNull(),
+    qboId: text("qbo_id").notNull(),
+    date: date("date").notNull(),
+    description: text("description").notNull(),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    account: text("account"),
+    reference: text("reference"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("qbo_entries_user_entity_qbo_id_unique").on(
+      t.userId,
+      t.qboEntityType,
+      t.qboId,
+    ),
+  ],
+);
+
 export const llmLogs = pgTable("llm_logs", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull(),
@@ -122,3 +179,5 @@ export type Transaction = typeof transactions.$inferSelect;
 export type LedgerEntry = typeof ledgerEntries.$inferSelect;
 export type Match = typeof matches.$inferSelect;
 export type LlmLog = typeof llmLogs.$inferSelect;
+export type QboConnection = typeof qboConnections.$inferSelect;
+export type QboEntry = typeof qboEntries.$inferSelect;

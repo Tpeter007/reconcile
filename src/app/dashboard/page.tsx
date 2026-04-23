@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { Check } from "lucide-react";
@@ -8,6 +9,8 @@ import {
   ledgerEntries,
   matches,
   plaidItems,
+  qboConnections,
+  qboEntries,
   transactions,
 } from "@/db/schema";
 import { cn } from "@/lib/utils";
@@ -28,6 +31,12 @@ import {
 import { PlaidLinkButton } from "@/components/plaid-link-button";
 import { LedgerUploadButton } from "@/components/ledger-upload-button";
 import { RunMatchingButton } from "@/components/run-matching-button";
+import {
+  ConnectQboButton,
+  type QboConnectionState,
+} from "@/components/connect-qbo-button";
+import { FetchQboEntriesButton } from "@/components/fetch-qbo-entries-button";
+import { QboQueryToast } from "@/components/qbo-query-toast";
 import {
   AcceptRejectButtons,
   ManualLinkButton,
@@ -88,6 +97,42 @@ export default async function DashboardPage() {
     .orderBy(desc(ledgerEntries.date), desc(ledgerEntries.createdAt))
     .limit(100);
 
+  const [qboConn] = await db
+    .select({
+      id: qboConnections.id,
+      refreshTokenExpiresAt: qboConnections.refreshTokenExpiresAt,
+    })
+    .from(qboConnections)
+    .where(eq(qboConnections.userId, user.id))
+    .limit(1);
+
+  const now = new Date();
+  const qboState: QboConnectionState = !qboConn
+    ? "disconnected"
+    : qboConn.refreshTokenExpiresAt > now
+      ? "connected"
+      : "reconnect_required";
+
+  const qboRows = await db
+    .select({
+      id: qboEntries.id,
+      date: qboEntries.date,
+      description: qboEntries.description,
+      account: qboEntries.account,
+      reference: qboEntries.reference,
+      amount: qboEntries.amount,
+      qboEntityType: qboEntries.qboEntityType,
+    })
+    .from(qboEntries)
+    .where(eq(qboEntries.userId, user.id))
+    .orderBy(desc(qboEntries.date), desc(qboEntries.createdAt))
+    .limit(100);
+
+  const qboCountsByType = qboRows.reduce<Record<string, number>>((acc, r) => {
+    acc[r.qboEntityType] = (acc[r.qboEntityType] ?? 0) + 1;
+    return acc;
+  }, {});
+
   const activeMatches = await db
     .select({
       id: matches.id,
@@ -140,12 +185,19 @@ export default async function DashboardPage() {
         <div className="flex flex-wrap items-center gap-3">
           <LedgerUploadButton />
           <PlaidLinkButton />
+          <ConnectQboButton state={qboState} />
+          <FetchQboEntriesButton connectionState={qboState} />
           <RunMatchingButton />
           <SignOutButton />
         </div>
       </header>
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+      <Suspense fallback={null}>
+        <QboQueryToast />
+      </Suspense>
+
+      <div className="overflow-x-auto">
+      <div className="grid min-w-[1200px] grid-cols-1 gap-6 md:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle>Bank transactions</CardTitle>
@@ -327,6 +379,91 @@ export default async function DashboardPage() {
             </Table>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>QBO entries</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              {qboRows.length} total
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {Object.keys(qboCountsByType).length === 0
+                ? qboState === "disconnected"
+                  ? "Connect QuickBooks to pull entries."
+                  : "No entries yet — click Fetch QBO entries."
+                : Object.entries(qboCountsByType)
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([k, v]) => `${k}: ${v}`)
+                    .join(" · ")}
+            </p>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10" />
+                  <TableHead>Date</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Account</TableHead>
+                  <TableHead>Reference</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Type</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {qboRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={7}
+                      className="text-center text-muted-foreground py-8"
+                    >
+                      {qboState === "disconnected"
+                        ? "QuickBooks not connected."
+                        : qboState === "reconnect_required"
+                          ? "Reconnect QuickBooks to refresh entries."
+                          : "No QBO entries in the last 30 days yet."}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  qboRows.map((r) => {
+                    // QBO entries can never be in `matches` in v0 (Scope C will
+                    // wire that up). Keep the matched-style branch present so
+                    // the next ticket doesn't have to rewrite this block.
+                    const matched = false;
+                    return (
+                      <TableRow
+                        key={r.id}
+                        className={cn(matched && "text-muted-foreground")}
+                      >
+                        <TableCell className="w-10">
+                          {matched ? (
+                            <Check
+                              className="h-4 w-4 text-emerald-600"
+                              aria-label="Matched"
+                            />
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {r.date}
+                        </TableCell>
+                        <TableCell>{r.description}</TableCell>
+                        <TableCell>{r.account ?? ""}</TableCell>
+                        <TableCell>{r.reference ?? ""}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {currency.format(Number(r.amount))}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {r.qboEntityType}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
       </div>
     </main>
   );
