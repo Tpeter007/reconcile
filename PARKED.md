@@ -34,3 +34,9 @@ These are explicitly not v0 scope. Review after design partners 2-3 have used th
 - Accounting-firm tier (one login, many client books)
 - Receipt ingestion via email forwarding
 - Anomaly → Slack / email digest
+
+## Ticket 6 — QBO OAuth (April 23, 2026)
+
+- **Parallelize QBO sync queries.** `src/lib/qbo/sync.ts` runs six entity-type queries in series. Measured 8-10s for 34 rows at sandbox scale. Wrap in `Promise.all` when a real customer reports slow syncs or when we observe >20s p95.
+- **`looksBankLike` heuristic misses card-brand account names.** In `src/lib/qbo/sync.ts`, the heuristic that identifies the "bank/cash" line in a JournalEntry (for sign derivation) matches substrings like "checking", "savings", "credit card". It does NOT match accounts named "Mastercard", "Amex", "Chase Sapphire", etc. Fix: scan account type from the chart of accounts rather than name. Can't test until we see a real customer with JournalEntries against branded card accounts.
+- **`intuit-oauth` SDK could be replaced with plain fetch.** The SDK wraps three endpoints we could hit directly in ~80 lines. Not urgent; only revisit if the SDK is abandoned, breaks on a Next.js upgrade, or causes hydration/bundle-size issues.
