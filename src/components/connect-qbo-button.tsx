@@ -1,7 +1,6 @@
 "use client";
 
 import { useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { disconnectQboAction } from "@/app/qbo/actions";
@@ -12,11 +11,10 @@ export type QboConnectionState =
   | "reconnect_required";
 
 export function ConnectQboButton({ state }: { state: QboConnectionState }) {
-  const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   function goConnect() {
-    router.push("/qbo/connect");
+  window.location.href = "/qbo/connect";
   }
 
   function onDisconnect() {
