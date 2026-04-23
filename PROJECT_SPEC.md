@@ -2,7 +2,7 @@
 **Working codename:** Reconcile (rename before you tell anyone outside the build)
 **Owner:** Sergei
 **Status:** v0 in progress
-**Last updated:** April 20, 2026
+**Last updated:** April 23, 2026
 
 ---
 
@@ -160,3 +160,5 @@ Check Max usage monthly. If hitting caps often, be more deliberate with effort l
 - **Drizzle → raw SQL before swapping ORMs.** If a query gets hard to express, drop into `db.execute(sql\`...\`)`. Don't move to Prisma.
 - **Supabase Auth is the default forever unless it specifically fails us.** Magic link works. Add Supabase's built-in OAuth providers for SSO when accounting-firm tier requires. Don't move to Clerk/Auth0.
 - **Separate Postgres only post-Supabase-Pro-limits AND post-revenue.** Likely 50–100 paying customers out. Not a near-term concern.
+
+- **April 23, 2026** — Ticket 6: QBO OAuth + manual sync across 6 entity types (Purchase, BillPayment, Deposit, Payment, SalesReceipt, JournalEntry), three-column dashboard, tri-state Connect/Reconnect/Disconnect button. Sandbox verified end-to-end including reconnect flow. Tokens stored plaintext; encryption deferred to combined Plaid+QBO ticket.
