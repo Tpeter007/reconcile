@@ -25,6 +25,7 @@ Bank-to-books reconciliation, v0. This README covers the first vertical slice: e
    - `DATABASE_URL` — Supabase → Project Settings → Database → Connection string (URI). Either the pooled (port 6543) or direct (5432) URL works.
    - `PLAID_CLIENT_ID`, `PLAID_SECRET` — Plaid Dashboard → Team Settings → Keys. Use the **Sandbox** secret.
    - `PLAID_ENV=sandbox` — leave as-is for this ticket.
+   - `TOKEN_ENCRYPTION_KEY` — required. Used to encrypt Plaid and QBO tokens at rest (AES-256-GCM). Generate with `openssl rand -base64 32` and paste the output. **Never commit this value.** If lost, every stored token becomes permanently unreadable and users will have to reconnect both Plaid and QBO — keep it in a password manager.
 
 3. **Configure Supabase auth**
    - Supabase → Authentication → URL Configuration
@@ -63,7 +64,6 @@ Bank-to-books reconciliation, v0. This README covers the first vertical slice: e
 ## What's next
 
 - QBO OAuth + sync (Week 2 milestone).
-- Encrypt `plaid_items.access_token` at rest (left as a `TODO` in `src/db/schema.ts`).
 - Webhook endpoint + Inngest function for incremental `transactions/sync` instead of syncing only at connect time.
 - Deterministic matching (exact amount + date ±3 days), then LLM matching.
 

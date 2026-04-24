@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { createClient } from "@/lib/supabase/server";
 import { db } from "@/db";
 import { qboConnections, qboEntries } from "@/db/schema";
+import { TokenDecryptError } from "@/lib/crypto/tokens";
 import { syncQboEntries } from "@/lib/qbo/sync";
 import {
   QboNotConnectedError,
@@ -54,6 +55,17 @@ export async function syncQboEntriesAction(): Promise<SyncQboActionResult> {
     }
     if (err instanceof QboReconnectRequiredError) {
       return { ok: false, error: "reconnect_required" };
+    }
+    if (err instanceof TokenDecryptError) {
+      console.error("[qbo] token decrypt failure in sync", {
+        userId,
+        provider: "qbo",
+        column: "access_token",
+      });
+      return {
+        ok: false,
+        error: "Connection data couldn't be decrypted. Please reconnect.",
+      };
     }
     console.error("[qbo] syncQboEntriesAction failed", {
       userId,

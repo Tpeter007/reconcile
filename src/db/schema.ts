@@ -13,7 +13,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-// TODO: encrypt access_token at rest before leaving Sandbox. See SPEC.
+// access_token stores `v1:<base64>` ciphertext produced by src/lib/crypto/tokens.ts.
 export const plaidItems = pgTable("plaid_items", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull(),
@@ -111,8 +111,7 @@ export const matches = pgTable(
   ],
 );
 
-// TODO: encrypt access_token + refresh_token at rest before leaving Sandbox.
-// Will be handled together with plaid_items.access_token in a combined encryption ticket.
+// access_token and refresh_token store `v1:<base64>` ciphertext produced by src/lib/crypto/tokens.ts.
 export const qboConnections = pgTable(
   "qbo_connections",
   {

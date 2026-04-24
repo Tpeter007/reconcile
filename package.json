@@ -9,7 +9,8 @@
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file=.env.local --experimental-strip-types scripts/migrate.ts",
-    "db:studio": "node --env-file=.env.local ./node_modules/drizzle-kit/bin.cjs studio"
+    "db:studio": "node --env-file=.env.local ./node_modules/drizzle-kit/bin.cjs studio",
+    "clear-for-encryption": "node --env-file=.env.local --experimental-strip-types scripts/clear-for-encryption.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",

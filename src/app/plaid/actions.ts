@@ -7,6 +7,7 @@ import { plaid } from "@/lib/plaid";
 import { createClient } from "@/lib/supabase/server";
 import { db } from "@/db";
 import { bankAccounts, plaidItems, transactions } from "@/db/schema";
+import { encryptToken } from "@/lib/crypto/tokens";
 
 async function requireUserId(): Promise<string> {
   const supabase = await createClient();
@@ -40,6 +41,7 @@ export async function exchangePublicToken(
     public_token: publicToken,
   });
   const accessToken = exchange.data.access_token;
+  const encryptedAccessToken = encryptToken(accessToken);
   const itemId = exchange.data.item_id;
 
   const itemInfo = await plaid.itemGet({ access_token: accessToken });
@@ -57,13 +59,13 @@ export async function exchangePublicToken(
     .insert(plaidItems)
     .values({
       userId,
-      accessToken,
+      accessToken: encryptedAccessToken,
       itemId,
       institutionName,
     })
     .onConflictDoUpdate({
       target: plaidItems.itemId,
-      set: { accessToken, institutionName },
+      set: { accessToken: encryptedAccessToken, institutionName },
     })
     .returning();
 

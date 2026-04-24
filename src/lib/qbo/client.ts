@@ -1,6 +1,11 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { qboConnections } from "@/db/schema";
+import {
+  decryptToken,
+  encryptToken,
+  TokenDecryptError,
+} from "@/lib/crypto/tokens";
 import { QboNotConnectedError, QboReconnectRequiredError } from "./errors";
 import { refreshTokens } from "./oauth";
 
@@ -68,17 +73,37 @@ async function ensureFreshAccessToken(userId: string): Promise<{
 
   const accessExpiresInMs = row.accessTokenExpiresAt.getTime() - Date.now();
   if (accessExpiresInMs > FIVE_MINUTES_MS) {
-    return { accessToken: row.accessToken, realmId: row.realmId };
+    // Fresh-enough path: decrypt the stored access token and hand plaintext to caller.
+    // If decrypt fails here, let TokenDecryptError propagate to the server action.
+    const accessToken = decryptToken(row.accessToken);
+    return { accessToken, realmId: row.realmId };
   }
 
   // ----- Refresh path -----
-  // Step 6 sequencing: read current refresh token, call Intuit, then PERSIST
-  // the new tokens BEFORE returning the new access token to the caller.
+  // Step 6 sequencing (preserved, extended for encryption):
+  //   (1) decrypt stored refresh_token to plaintext
+  //   (2) call Intuit with plaintext refresh_token
+  //   (3) encrypt new access_token and new refresh_token
+  //   (4) UPDATE qbo_connections with encrypted values + new expiries
+  //   (5) return plaintext access_token to caller AFTER the UPDATE succeeds
   // If the DB write fails we do NOT retry the refresh (the old refresh token
   // is dead). Instead we mark the connection broken and surface a reconnect.
+
+  let plaintextRefreshToken: string;
+  try {
+    plaintextRefreshToken = decryptToken(row.refreshToken);
+  } catch (err) {
+    if (err instanceof TokenDecryptError) {
+      console.error("[qbo] qbo refresh_token decrypt failure", { userId });
+      await markConnectionBroken(userId);
+      throw new QboReconnectRequiredError();
+    }
+    throw err;
+  }
+
   let newTokens;
   try {
-    newTokens = await refreshTokens(row.refreshToken);
+    newTokens = await refreshTokens(plaintextRefreshToken);
   } catch (err) {
     console.error("[qbo] token refresh failed", {
       userId,
@@ -88,12 +113,15 @@ async function ensureFreshAccessToken(userId: string): Promise<{
     throw new QboReconnectRequiredError();
   }
 
+  const encryptedAccessToken = encryptToken(newTokens.access_token);
+  const encryptedRefreshToken = encryptToken(newTokens.refresh_token);
+
   try {
     await db
       .update(qboConnections)
       .set({
-        accessToken: newTokens.access_token,
-        refreshToken: newTokens.refresh_token,
+        accessToken: encryptedAccessToken,
+        refreshToken: encryptedRefreshToken,
         accessTokenExpiresAt: newTokens.access_token_expires_at,
         refreshTokenExpiresAt: newTokens.refresh_token_expires_at,
         updatedAt: new Date(),
