@@ -46,3 +46,10 @@ These are explicitly not v0 scope. Review after design partners 2-3 have used th
 - **Source filter in manual-link dialog.** Description-only filter for now; could add CSV/QBO toggle if a user complains.
 - **Unify ledger sources (de-dup CSV vs QBO).** A customer mid-migration may have the same underlying entry in both pools; matcher picks one, other stays unmatched. Revisit if a design partner hits this.
 - **Batch LLM when counterparty count exceeds 50.** TODO at `src/lib/matching/llm.ts:276` — currently truncates to 50 most recent across both sources. Batch or summarize when a real user breaks the cap.
+
+## From ticket 8 (April 24, 2026)
+
+- **Key rotation.** `v1:` prefix is the only rotation infrastructure in place. No v2 support, no multi-key decrypt map, no rotation UI. Revisit when the security posture demands it — likely post-SOC 2 requirement, or if key compromise is ever suspected.
+- **KMS migration.** Env-var key is fine for v0. Switching to AWS KMS or Supabase Vault becomes relevant around SOC 2 audit time or ~10-20 paying customers. Call sites go through the shared `src/lib/crypto/tokens.ts` helper, so the swap is mechanical.
+- **Plaid decrypt site.** No Plaid code currently reads `plaid_items.access_token` back from DB — the only decrypt path is QBO. If a Plaid background transactions-sync worker is ever added (see the existing PARKED item about modified/removed transactions), that new read site will need `decryptToken` + `TokenDecryptError` handling, symmetric to the QBO pattern in `src/lib/qbo/client.ts`.
+- **.env.local.example was previously gitignored.** Fixed in a follow-up commit after ticket 8 merged. Future similar issues: audit `.gitignore` when adding new template files.
