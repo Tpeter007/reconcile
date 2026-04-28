@@ -53,3 +53,17 @@ These are explicitly not v0 scope. Review after design partners 2-3 have used th
 - **KMS migration.** Env-var key is fine for v0. Switching to AWS KMS or Supabase Vault becomes relevant around SOC 2 audit time or ~10-20 paying customers. Call sites go through the shared `src/lib/crypto/tokens.ts` helper, so the swap is mechanical.
 - **Plaid decrypt site.** No Plaid code currently reads `plaid_items.access_token` back from DB — the only decrypt path is QBO. If a Plaid background transactions-sync worker is ever added (see the existing PARKED item about modified/removed transactions), that new read site will need `decryptToken` + `TokenDecryptError` handling, symmetric to the QBO pattern in `src/lib/qbo/client.ts`.
 - **.env.local.example was previously gitignored.** Fixed in a follow-up commit after ticket 8 merged. Future similar issues: audit `.gitignore` when adding new template files.
+
+## From ticket 9 (April 27, 2026)
+
+- **Plaid Sandbox → Development promotion.** Separate ticket — different rollout concerns (real-credential handling, redirect URI allowlist registration, secret rotation). Sandbox secrets are fine for v0; promote when a design partner asks for live institution data.
+- **Custom domain.** Shipped on a `*.vercel.app` subdomain for v0. Add a real domain when a design partner balks at the URL or when marketing surface matters.
+- **Automated production smoke tests.** The full smoke check in `DEPLOY.md` is manual. Wire as Playwright/Vitest run post-design-partner-1, once the flow has stabilized enough that the test wouldn't churn weekly.
+- **Vercel Analytics + Speed Insights.** Declined for v0. Sentry covers errors; product analytics not needed until there are users to analyze.
+- **Vercel Preview deploys.** Currently disabled in `vercel.json` (`deploymentEnabled.main` only). Revisit if multi-developer collaboration becomes relevant — preview URLs per PR are useful for review but cost env-var-scope complexity solo.
+- **Axiom log shipping.** Not wired. Vercel function logs are fine for v0 debugging. Add when retention or queryability becomes a constraint.
+- **Sentry source maps + auth token.** Currently shipping minified stack traces — readable enough at v0 codebase size, but symbol names get mangled. Wire `SENTRY_AUTH_TOKEN` and `withSentryConfig` source-map upload when stack traces stop being readable.
+- **Sentry session replay + performance monitoring.** Sample rates explicitly set to zero (`replaysSessionSampleRate`, `replaysOnErrorSampleRate`, `tracesSampleRate`). Revisit post-design-partner — replay is invaluable for "what did the user actually click" but comes with PII review and event-volume cost.
+- **Vercel Claude Code plugin evaluation.** Deferred during this ticket to keep scope tight. Evaluate after merge for ticket 10 onward — could streamline the deploy/log/env-var loop.
+- **Function timeout tuning.** Hobby plan caps function execution at 10s. LLM matching server action wraps a Sonnet 4.5 call; usually < 5s but a slow Anthropic period plus DB writes could hit the cap. If matching mysteriously fails on prod with no logs, bump via `vercel.json` `functions[].maxDuration` (requires Pro plan).
+- **WSL "interop is disabled" handler issue.** `WSLInterop` legacy handler missing on this dev box while `WSLInterop-late` works; affects `wslview` only (other interop fine). Known fix: `wsl --shutdown` from the Windows side, then restart the distro. Cosmetic; deferred until it actually blocks something.
