@@ -12,9 +12,13 @@
     "db:studio": "node --env-file=.env.local ./node_modules/drizzle-kit/bin.cjs studio",
     "clear-for-encryption": "node --env-file=.env.local --experimental-strip-types scripts/clear-for-encryption.ts"
   },
+  "engines": {
+    "node": "22.x"
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
     "@base-ui/react": "^1.4.1",
+    "@sentry/nextjs": "^10.50.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.104.0",
     "class-variance-authority": "^0.7.1",
