@@ -117,6 +117,50 @@ Encryption-pipeline checks interleaved, fail fast before burning fresh OAuth gra
 - **Migration ran, breaking change:** Vercel rollback alone is insufficient. Restore DB from snapshot (deploy step 2), then promote previous deploy.
 - **`TOKEN_ENCRYPTION_KEY` mismatch / lost:** restore from 1Password. If truly lost, every connected user is broken. Manually truncate `plaid_items` and `qbo_connections` and force reconnect. (`scripts/clear-for-encryption.ts` is dev-targeted; do NOT run on prod without manual edit — its truncate list includes `transactions` and `matches`.)
 
+## Plaid environment swap
+
+Used when flipping `PLAID_ENV` (sandbox → production), rotating Plaid keys, or any operation that invalidates existing encrypted access tokens in `plaid_items`. Sandbox-issued tokens do not authenticate against the Production Plaid API; the rows must be cleared before the env swap or the app will throw on every Plaid call until users reconnect.
+
+1. **Clear Plaid-related tables on prod DB, from local.**
+
+   ```bash
+   DATABASE_URL="<prod-session-pooler-uri-port-5432>" pnpm clear-plaid-data
+   # type 'clear' at the prompt to confirm
+   ```
+
+   Use the **session pooler** (port 5432). The direct host fails on WSL because the dev box has no IPv6 route — same caveat as `db:migrate`. Truncates `plaid_items`, `bank_accounts`, `transactions` (CASCADE drops dependent `matches` rows referencing those bank transactions). Preserves `qbo_connections`, `qbo_entries`, `ledger_entries`, `llm_logs`, and auth.
+
+2. **Swap the three Vercel env vars in production scope.**
+
+   ```bash
+   vercel env rm PLAID_ENV production
+   vercel env add PLAID_ENV production            # value: production
+   vercel env rm PLAID_CLIENT_ID production
+   vercel env add PLAID_CLIENT_ID production      # value from 1Password
+   vercel env rm PLAID_SECRET production
+   vercel env add PLAID_SECRET production         # value from 1Password
+   ```
+
+   Never paste the secret into a script or commit it. Trial Plan keys live in 1Password under "Reconcile prod (Plaid Production Trial)".
+
+3. **Redeploy.**
+
+   ```bash
+   vercel --prod
+   ```
+
+4. **Verify encryption pipeline against a real Plaid token.** After connecting a real bank on the prod URL:
+
+   ```bash
+   psql "<prod-session-pooler-uri-port-5432>" -c "SELECT LEFT(access_token, 3) FROM plaid_items LIMIT 1;"
+   ```
+
+   Must return `v1:`. Same encrypt-at-rest contract as sandbox tokens; if this fails, the issue is the encryption pipeline, not Plaid. Same WSL IPv6 constraint as step 1 — use the session pooler URI, not the direct host.
+
+### Trial Plan limit (10 Items)
+
+The Plaid Production Trial Plan caps total connected Items at 10. Burned Items cannot be reclaimed: `/item/remove` decrements the active count for billing on Pay-as-you-go but does NOT free a Trial Plan slot. Treat each Connect-a-bank click as a one-way action. Do not test by repeatedly connecting and disconnecting. Upgrade to Pay-as-you-go before the 10-Item ceiling is approached (see `PARKED.md`).
+
 ## Things this runbook deliberately doesn't do
 
 - No automated CI migration step. Too easy to ship a bad migration on a Friday.
