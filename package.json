@@ -10,7 +10,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file=.env.local --experimental-strip-types scripts/migrate.ts",
     "db:studio": "node --env-file=.env.local ./node_modules/drizzle-kit/bin.cjs studio",
-    "clear-for-encryption": "node --env-file=.env.local --experimental-strip-types scripts/clear-for-encryption.ts"
+    "clear-for-encryption": "node --env-file=.env.local --experimental-strip-types scripts/clear-for-encryption.ts",
+    "clear-plaid-data": "node --env-file=.env.local --experimental-strip-types scripts/clear-plaid-data.ts"
   },
   "engines": {
     "node": "22.x"
