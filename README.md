@@ -1,73 +1,48 @@
 # Reconcile
 
-Bank-to-books reconciliation, v0. This README covers the first vertical slice: email magic-link auth → Plaid Link (Sandbox) → last 30 days of transactions in a table.
+A bank-to-books reconciliation tool for small businesses. Pulls bank transactions via Plaid, pulls accounting entries from QuickBooks Online, and uses Claude to suggest matches between them.
 
-## Prereqs
+Built solo as a learning project. Shipped to production on real bank data, then archived after market research showed the AI bookkeeping space is already crowded with funded incumbents (Booke.ai, Vic.ai, Truewind) and the customer wedge wasn't worth pursuing further.
 
-- Node 22+
-- pnpm (`corepack enable` if you don't have it)
-- A Supabase project (Postgres + auth)
-- Plaid Sandbox credentials (`client_id` + `secret`) from https://dashboard.plaid.com
+## What it does
 
-## Setup
+- Magic-link auth (Supabase)
+- Plaid integration for bank transaction sync
+- QuickBooks Online OAuth + entity sync (six entity types)
+- CSV ledger upload as a QBO alternative
+- Deterministic matching (amount + date + direction)
+- LLM matching via Claude Sonnet 4.5 with rejection feedback loop
+- Three-column dashboard (bank / ledger / QBO)
+- AES-256-GCM encryption at rest for all OAuth tokens
 
-1. **Install dependencies**
-   ```bash
-   pnpm install
-   ```
+## Stack
 
-2. **Fill in env**
-   ```bash
-   cp .env.local.example .env.local
-   ```
-   Fill each key:
-   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` — from Supabase → Project Settings → API.
-   - `DATABASE_URL` — Supabase → Project Settings → Database → Connection string (URI). Either the pooled (port 6543) or direct (5432) URL works.
-   - `PLAID_CLIENT_ID`, `PLAID_SECRET` — Plaid Dashboard → Team Settings → Keys. Use the **Sandbox** secret.
-   - `PLAID_ENV=sandbox` — leave as-is for this ticket.
-   - `TOKEN_ENCRYPTION_KEY` — required. Used to encrypt Plaid and QBO tokens at rest (AES-256-GCM). Generate with `openssl rand -base64 32` and paste the output. **Never commit this value.** If lost, every stored token becomes permanently unreadable and users will have to reconnect both Plaid and QBO — keep it in a password manager.
+Next.js 16 (App Router), TypeScript, Tailwind + shadcn/ui, Supabase Postgres + Auth, Drizzle ORM, Plaid, Anthropic SDK, deployed on Vercel with minimal Sentry.
 
-3. **Configure Supabase auth**
-   - Supabase → Authentication → URL Configuration
-   - Set **Site URL** to `http://localhost:3000`
-   - Add `http://localhost:3000/auth/callback` to **Redirect URLs**.
+## Project shape
 
-4. **Apply the database migration**
-   ```bash
-   pnpm db:migrate
-   ```
-   (Regenerate after schema changes: `pnpm db:generate`.)
+- 11 tickets, ~6 weeks solo
+- One ticket per branch, screenshot-driven approval discipline
+- Every deferred decision documented in `PARKED.md`
+- Full architecture notes in `PROJECT_SPEC.md`
+- Deploy runbook in `DEPLOY.md`
 
-5. **Run the app**
-   ```bash
-   pnpm dev
-   ```
-   Open http://localhost:3000.
+## What I learned
 
-## Using it
+- Solo full-stack shipping with AI as a senior-engineer pair: how to scope tickets, when to defer, when to push back on the AI's first answer
+- Encryption-at-rest patterns and key rotation infrastructure
+- OAuth flows for two different providers with different security postures
+- The discipline of a parked-items file — every "we should fix this later" written down and dated, so future-me has context
+- That a working v0 is not a market — most of the work after shipping is customer discovery, and the technical build is the cheapest part
 
-1. Enter your email on `/login`; click the magic link in the email.
-2. You'll land on `/dashboard`.
-3. Click **Connect a bank**, pick any institution in Plaid Link, and sign in with Sandbox credentials:
-   - Username: `user_good`
-   - Password: `pass_good`
-   - If prompted for MFA: `1234`
-4. You should see the last 30 days of transactions.
+## Why I stopped
 
-## What works
+The AI bookkeeping category is contested by funded startups 2-3 years ahead on product, distribution, and brand. Differentiating against QBO's built-in flow plus Booke/Vic/Truewind would require a sharp customer wedge I don't have and a sales motion I don't enjoy. The product is good portfolio evidence but not a viable business in this market.
 
-- Email magic-link auth with Supabase.
-- `/dashboard` is protected via a server-side session check, plus a Next.js proxy (formerly middleware) refreshes the session cookie on every request.
-- Plaid Link in Sandbox, `/transactions/sync`-based pull (up to 30 days), upsert into Postgres via Drizzle.
-- Dashboard renders the 100 most recent transactions across all the user's connected Plaid items.
+## Status
 
-## What's next
+Archived. Production deployment removed, secrets revoked, real customer data cleared.
 
-- QBO OAuth + sync (Week 2 milestone).
-- Webhook endpoint + Inngest function for incremental `transactions/sync` instead of syncing only at connect time.
-- Deterministic matching (exact amount + date ±3 days), then LLM matching.
+---
 
-## Notes on the stack
-
-- **Next 16** shipped recently: `middleware.ts` has been renamed to `proxy.ts`. See `src/proxy.ts`.
-- **shadcn v4** replaced `toast` with `sonner`; we installed `sonner` in its place (no toaster is mounted yet — the slice doesn't need it).
+Built April–May 2026.
